@@ -23,3 +23,8 @@ class Event(BaseModel):
     user = ForeignKeyField(User, related_name="events")
     tickets_affected = TextField()
     active = BooleanField(default=False)
+
+
+class PrevTicket(BaseModel):
+    user = ForeignKeyField(User, related_name="prev_tickets")
+    ticket_key = CharField()

@@ -1,16 +1,17 @@
 from jira import JIRA
 from slacksocket import SlackSocket
-from threading import Thread
+from threading import Thread, Timer
 import Queue
 from db import *
 import re
-from datetime import time
+from datetime import time, datetime, timedelta
+import sys
 
 config = {}
 execfile("config.py", config)
 slack_sock = SlackSocket(config["slack_token"], True, ["message"])
 active_sessions = {}
-
+jira_conn = JIRA(server=config["jira_server"], basic_auth=(config["jira_user"], config["jira_pass"]))
 
 # TODO: Should possibly refactor
 class Session(object):
@@ -77,14 +78,22 @@ class Session(object):
     def __lookup_action(self, message):
         # type: (str) -> None
         """Parse a message and dispatch to the proper method"""
+
+        # should probably try to do this without the returns
+        # help check
         if message == "help":
             self.__show_help()
+            return
 
+        # inactivate check
         if message == "inactivate":
             self.__inactivate_user()
+            return
 
+        # get hours check
         if re.search("^(?:get|show) (?:hours|options|settings)$", message):
             self.__show_opts()
+            return
 
         # set hours check
         match = re.search("^set hours (\d{1,2})(?::(\d{1,2}))? ?(am|pm)? ?- ?(\d+)(?::(\d{1,2}))? ?(am|pm)?$", message)
@@ -108,7 +117,7 @@ class Session(object):
             return
 
     def __set_hours(self, start, end):
-        # type: (Time, Time) -> None
+        # type: (time, time) -> None
         """Set working hours"""
         self.__user.on_time = start
         self.__user.off_time = end
@@ -147,7 +156,7 @@ class Session(object):
                             "get hours -- show work and lunch hours")
 
     def __set_lunch_hours(self, start, end):
-        # type: (datetime.Time, datetime.Time) -> None
+        # type: (time, time) -> None
         """Set user's lunch hours"""
         self.__user.lunch_on = start
         self.__user.lunch_off = end
@@ -155,7 +164,21 @@ class Session(object):
         self.__send_message("Lunch hours set")
 
 
+def check_active_tickets():
+    Timer(1800, check_active_tickets, ()).start()
+    for u in User.select().where(User.active == True):
+        in_progress = jira_conn.search_issues("project=ROP and assignee=matt and status=\"In Progress\"")
+
+
 def main():
+    next_half_hour = datetime.now()
+    if next_half_hour.minute <= 30:
+        next_half_hour.replace(minute=30)
+    else:
+        next_half_hour += timedelta(hours=1)
+        next_half_hour.replace(minute=0)
+    Timer((next_half_hour - datetime.now()).total_seconds(), check_active_tickets, ()).start()
+
     while True:
         event = slack_sock.get_event().event
         print event
@@ -171,4 +194,8 @@ def main():
                 active_sessions[event["user"]] = session
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print "Got Ctrl-C shutting down"
+        sys.exit()
