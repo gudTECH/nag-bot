@@ -9,11 +9,13 @@ from datetime import time
 config = {}
 execfile("config.py", config)
 slack_sock = SlackSocket(config["slack_token"], True, ["message"])
+active_sessions = {}
 
 
 # TODO: Should possibly refactor
 class Session(object):
     def __init__(self, username):
+        # type: (str) -> None
         self.__queue = Queue.Queue()
         channel = slack_sock.get_im_channel(username)
         self.__channel_id = channel["id"]
@@ -24,24 +26,34 @@ class Session(object):
         self.__user = rec
         self.active = False
         self.__silent_exit = True
+        self.__open_question = False
 
     def queue_message(self, message):
+        # type: (str) -> None
+        """Queue a message for processing"""
         self.__queue.put(message)
 
     def start_worker(self):
+        # type: () -> None
+        """Start worker thread"""
         self.active = True
         t = Thread(target=self.__process_message)
         t.daemon = True
         t.start()
 
     def __process_message(self):
+        # type: () -> None
+        """Block for message then dispatch it to the proper method"""
         try:
             message = self.__queue.get(True, 120)
             if message == "activate":
                 self.__activate_user()
+
             if self.__user.active:
                 message = message.lower()
                 self.__lookup_action(message)
+                if self.__open_question:
+                    self.__process_message()
 
             else:
                 self.__send_message("Your user appears to be inactive, you have either disabled it or have not "
@@ -56,11 +68,15 @@ class Session(object):
             self.active = False
 
     def __activate_user(self):
+        # type: () -> None
+        """Activate the user associated with this session"""
         self.__user.active = True
         self.__user.save()
         self.__send_message("User activated")
 
     def __lookup_action(self, message):
+        # type: (str) -> None
+        """Parse a message and dispatch to the proper method"""
         if message == "help":
             self.__show_help()
 
@@ -92,20 +108,28 @@ class Session(object):
             return
 
     def __set_hours(self, start, end):
+        # type: (Time, Time) -> None
+        """Set working hours"""
         self.__user.on_time = start
         self.__user.off_time = end
         self.__user.save()
         self.__send_message("Hours set")
 
     def __inactivate_user(self):
+        # type: () -> None
+        """Inactivate the user assoc"""
         self.__user.active = False
         self.__user.save()
         self.__send_message("User deactivated")
 
     def __send_message(self, message):
+        # type: (str) -> None
+        """Send a pm to the user associated with this session"""
         slack_sock.send_msg(message, channel_id=self.__channel_id, confirm=False)
 
     def __show_opts(self):
+        # type: () -> None
+        """Show the user's selected options"""
         self.__send_message("Active\n"
                             "Work hours -- {0} - {1}\n"
                             "Lunch hours -- {2} - {3}".format(self.__user.on_time.strftime("%I:%M %p"),
@@ -114,6 +138,8 @@ class Session(object):
                                                               self.__user.lunch_off.strftime("%I:%M %p")))
 
     def __show_help(self):
+        # type: () -> None
+        """Show help blurb"""
         self.__send_message("-- gudbot help --\n"
                             "activate -- activate user\n"
                             "set hours HH(:MM)?(AM|PM)?-HH(:MM)?(AM|PM)? -- set start and stop hours\n"
@@ -121,6 +147,8 @@ class Session(object):
                             "get hours -- show work and lunch hours")
 
     def __set_lunch_hours(self, start, end):
+        # type: (datetime.Time, datetime.Time) -> None
+        """Set user's lunch hours"""
         self.__user.lunch_on = start
         self.__user.lunch_off = end
         self.__user.save()
@@ -128,8 +156,6 @@ class Session(object):
 
 
 def main():
-    active_sessions = {}
-
     while True:
         event = slack_sock.get_event().event
         print event
