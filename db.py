@@ -1,6 +1,7 @@
 from peewee import *
 from playhouse.sqlite_ext import SqliteExtDatabase
 from datetime import time
+import json
 
 db = SqliteExtDatabase("gudbot.db")
 
@@ -21,8 +22,19 @@ class User(BaseModel):
 
 class Event(BaseModel):
     user = ForeignKeyField(User, related_name="events")
-    tickets_affected = TextField()
-    active = BooleanField(default=False)
+    __tickets_affected = TextField(null=True)
+    active = BooleanField(default=True)
+    conflict_type = CharField()
+
+    @property
+    def tickets_affected(self):
+        # type: () -> list[str]
+        return json.loads(self.__tickets_affected) if self.__tickets_affected else []
+
+    @tickets_affected.setter
+    def tickets_affected(self, val):
+        # type: (list[str]) -> None
+        self.__tickets_affected = json.dumps(val)
 
 
 class PrevTicket(BaseModel):
