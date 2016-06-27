@@ -89,7 +89,7 @@ class Session(object):
 
         except Queue.Empty:
             if self.__context and self.__context.active:
-                slack_sock.send_msg("Time's up, you'll need to resolve this conflict via JIRA.",
+                slack_sock.send_msg("Time's up, you'll need to resolve this event via JIRA.",
                                     channel_id=self.__channel_id)
         finally:
             self.active = False
@@ -160,9 +160,9 @@ class Session(object):
         match = re.search("^set hours (\d{1,2})(?::(\d{1,2}))? ?(am|pm)? ?- ?(\d+)(?::(\d{1,2}))? ?(am|pm)?$", message)
         if match:
             self.__set_hours(time(hour=int(match.group(1)) if match.group(3) != "pm" else int(match.group(1)) + 12,
-                                  minute=match.group(2) if match.group(2) else 0),
+                                  minute=int(match.group(2)) if match.group(2) else 0),
                              time(hour=int(match.group(4)) + 12 if match.group(6) != "am" else int(match.group(4)),
-                                  minute=match.group(5) if match.group(5) else 0))
+                                  minute=int(match.group(5)) if match.group(5) else 0))
 
         # set lunch hours check
         match = re.search("^set lunch hours (\d{1,2})(?::(\d{1,2}))? ?(am|pm)? ?- ?(\d+)(?::(\d{1,2}))? ?(am|pm)?$",
@@ -170,10 +170,10 @@ class Session(object):
         if match:
             self.__set_lunch_hours(time(hour=int(match.group(1)) if match.group(3) != "pm"
                                         else int(match.group(1)) + 12,
-                                        minute=match.group(2) if match.group(2) else 0),
+                                        minute=int(match.group(2)) if match.group(2) else 0),
                                    time(hour=int(match.group(4)) + 12 if match.group(6) != "am"
                                         else int(match.group(4)),
-                                        minute=match.group(5) if match.group(5) else 0))
+                                        minute=int(match.group(5)) if match.group(5) else 0))
 
     def __set_hours(self, start, end):
         # type: (time, time) -> None
@@ -247,6 +247,8 @@ class Session(object):
                                 "set hours HH(:MM)?(AM|PM)?-HH(:MM)?(AM|PM)? -- set start and stop hours\n"
                                 "set lunch hours HH(:MM)?(AM|PM)?-HH(:MM)?(AM|PM)? -- set lunch start and stop hours\n"
                                 "get hours -- show work and lunch hours\n"
+                                "pause -- set current case(s) to 'On Hold'\n"
+                                "resume -- set last case to 'In Progress'\n"
                                 "Wondering about another part of this bot?  'help' changes depending on the context")
 
     def __set_lunch_hours(self, start, end):
@@ -257,12 +259,38 @@ class Session(object):
         self.__user.save()
         self.__send_message("Lunch hours set")
 
+    def __pause_ticket(self):
+        # type: () -> None
+        in_progress = jira_conn.search_issues("project=ROP and assignee=matt and status=\"In Progress\"")
+        for ticket in in_progress:
+            transition = jira_conn.find_transitionid_by_name(ticket, "Halt Work")
+            jira_conn.transition_issue(ticket, transition)
+        if in_progress.total > 1:
+            self.__send_message("All tickets have been set to 'On Hold'.")
+        elif in_progress.total == 1:
+            self.__send_message("{0} has been set to 'On Hold'.".format(in_progress[0].key))
+        else:
+            self.__send_message("You have no in progress tickets.")
+
+    def __resume_ticket(self):
+        # type: () -> None
+        if self.__user.prev_tickets.count():
+            ticket = jira_conn.issue(self.__user.prev_tickets[0].ticket_key)
+            transition = jira_conn.find_transitionid_by_name(ticket, "Resume Work")
+            jira_conn.transition_issue(ticket, transition)
+            self.__send_message("{0} has been set to 'In Progress'.")
+        else:
+            self.__send_message("You have no previous ticket.")
+
 
 def check_active_tickets():
     global check_timer
     check_timer = Timer(1800, check_active_tickets, ())
     check_timer.start()
-    for u in User.select().where(User.active):
+    if datetime.now(timezone("America/Los_Angeles")).weekday() == 5 or \
+            datetime.now(timezone("America/Los_Angeles")).weekday() == 6:
+        return
+    for u in User.select().where(User.active == True):
         in_progress = jira_conn.search_issues("project=ROP and assignee=matt and status=\"In Progress\"")
 
         start_time = datetime.combine(date.today(), u.on_time).replace(tzinfo=timezone("America/Los_Angeles"))
