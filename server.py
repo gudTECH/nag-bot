@@ -340,7 +340,7 @@ def check_active_tickets():
 
                 # recording last worked on ticket for suggestion
                 else:
-                    if u.prev_tickets.total:
+                    if u.prev_tickets.count():
                         prev_ticket = u.prev_tickets  # type: PrevTicket
                         prev_ticket.ticket_key = in_progress[0].key
                         prev_ticket.save()
