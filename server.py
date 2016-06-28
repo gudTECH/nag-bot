@@ -82,17 +82,15 @@ class Session(object):
             if message == "activate":
                 self.__activate_user()
 
-            if self.__user.active:
-                message = message.lower()
-                self.__lookup_action(message)
-                if self.__context and self.__context.active:
-                    self.__process_message()
-
-            else:
+            if not self.__user.active:
                 self.__send_message("Your user appears to be inactive, you have either disabled it or have not "
                                     "initialized it.  If you just want to activate it with the current settings"
                                     "(defaults are 9-5 lunch 12-1), reply with 'activate'.  To learn how to set hours,"
-                                    " reply with 'help' after activating.")
+                                    " reply with 'help'.")
+            message = message.lower()
+            self.__lookup_action(message)
+            if self.__context and self.__context.active:
+                self.__process_message()
 
         except Queue.Empty:
             if self.__context and self.__context.active:
