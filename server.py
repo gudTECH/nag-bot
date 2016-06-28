@@ -17,6 +17,7 @@ check_timer = None  # type: Timer
 
 
 # TODO: Should possibly refactor
+# TODO: Replace maps with list comprehension
 class Session(object):
     def __init__(self, username, context=None):
         # type: (str, Event) -> None
@@ -36,9 +37,13 @@ class Session(object):
         if context:
             self.active = True
             if context.conflict_type == "on_over":
+                ticket_dict = {t.key: t for t in jira_conn.search_issues("key in ({0})"
+                                                                         .format(",".join(context.tickets_affected)))}
+
                 self.__send_message("\n".join(["You have two or more tickets in progress, which are you currently "
-                                               "working on?"] + map(lambda (idx, t): "[{0}] - {1}".format(idx + 1, t),
-                                                                    enumerate(context.tickets_affected))))
+                                               "working on?"] +
+                                              ["[{0}] - {1} -- {2}".format(idx + 1, t, ticket_dict[t].fields.summary)
+                                               for (idx, t) in enumerate(context.tickets_affected)]))
             elif context.conflict_type == "on_under":
                 if self.__user.prev_tickets.count():
                     self.__prev_ticket = self.__user.prev_tickets[0].ticket_key
