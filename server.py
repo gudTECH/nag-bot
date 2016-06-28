@@ -287,19 +287,25 @@ def check_active_tickets():
     global check_timer
     check_timer = Timer(1800, check_active_tickets, ())
     check_timer.start()
-    if datetime.now(timezone("America/Los_Angeles")).weekday() == 5 or \
-            datetime.now(timezone("America/Los_Angeles")).weekday() == 6:
+    if datetime.now(timezone(config["time_zone"])).weekday() == 5 or \
+            datetime.now(timezone(config["time_zone"])).weekday() == 6:
         return
     for u in User.select().where(User.active == True):
-        in_progress = jira_conn.search_issues("project=ROP and assignee=matt and status=\"In Progress\"")
+        # TODO: Fix for multiple projects
+        in_progress = jira_conn.search_issues("project={0} and assignee=matt and status=\"In Progress\""
+                                              .format(config["jira_project"]))
 
-        start_time = datetime.combine(date.today(), u.on_time).replace(tzinfo=timezone("America/Los_Angeles"))
-        off_time = datetime.combine(date.today(), u.off_time).replace(tzinfo=timezone("America/Los_Angeles"))
-        lunch_start_time = datetime.combine(date.today(), u.lunch_on).replace(tzinfo=timezone("America/Los_Angeles"))
-        lunch_stop_time = datetime.combine(date.today(), u.lunch_off).replace(tzinfo=timezone("America/Los_Angeles"))
+        start_time = datetime.combine(datetime.now(timezone(config["time_zone"])).date(), u.on_time)\
+            .replace(tzinfo=timezone(config["time_zone"]))
+        off_time = datetime.combine(datetime.now(timezone(config["time_zone"])).date(), u.off_time)\
+            .replace(tzinfo=timezone(config["time_zone"]))
+        lunch_start_time = datetime.combine(datetime.now(timezone(config["time_zone"])).date(), u.lunch_on)\
+            .replace(tzinfo=timezone(config["time_zone"]))
+        lunch_stop_time = datetime.combine(datetime.now(timezone(config["time_zone"])).date(), u.lunch_off)\
+            .replace(tzinfo=timezone(config["time_zone"]))
 
         # check if it's lunchtime
-        if lunch_start_time <= datetime.now(timezone("America/Los_Angeles")) <= lunch_stop_time:
+        if lunch_start_time <= datetime.now(timezone(config["time_zone"])) <= lunch_stop_time:
             if in_progress.total > 1:
                 ticket_keys = map(lambda t: t.key, in_progress)
                 if not any(set(e.ticket_list) == set(ticket_keys) for e in
@@ -312,7 +318,7 @@ def check_active_tickets():
                     s.start_worker()
         else:
             # check if in work hours with one hour of grace
-            if (start_time + timedelta(hours=1)) <= datetime.now(timezone("America/Los_Angeles")) <= \
+            if (start_time + timedelta(hours=1)) <= datetime.now(timezone(config["time_zone"])) <= \
                     (off_time - timedelta(hours=1)):
                 if in_progress.total > 1:
                     ticket_keys = map(lambda t: t.key, in_progress)
@@ -346,7 +352,7 @@ def check_active_tickets():
                         e.save()
 
             # check if not in work hours with one hour of grace
-            elif not ((start_time - timedelta(hours=1)) <= datetime.now(timezone("America/Los_Angeles")) <=
+            elif not ((start_time - timedelta(hours=1)) <= datetime.now(timezone(config["time_zone"])) <=
                       (off_time + timedelta(hours=1))):
                 if in_progress.total > 0:
                     context = Event(conflict_type="off_over", user=u)
@@ -375,8 +381,10 @@ def main():
 
     while True:
         event = slack_sock.get_event().event
+        print event
         if not ("hidden" in event and event["hidden"]) and event["user"] == event["channel"] and \
                 event["user"] != "slackbot":
+            print "{0} - {1}".format(event["user"], event["text"])
             if event["user"] in active_sessions and active_sessions[event["user"]].active:
                 active_sessions[event["user"]].queue_message(event["text"])
             else:
