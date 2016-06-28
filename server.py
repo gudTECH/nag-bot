@@ -47,9 +47,11 @@ class Session(object):
             elif context.conflict_type == "on_under":
                 if self.__user.prev_tickets.count():
                     self.__prev_ticket = self.__user.prev_tickets[0].ticket_key
+                    ticket = jira_conn.issue(self.__prev_ticket)
                     self.__send_message("You have no tickets in progress.\n"
-                                        "If you want move {0} to 'In Progress' reply with 'yes'.\n"
-                                        "Reply with 'no' to dismiss this message.".format(self.__prev_ticket))
+                                        "If you want move {0} - {1} to 'In Progress' reply with 'yes'.\n"
+                                        "Reply with 'no' to dismiss this message.".format(self.__prev_ticket,
+                                                                                          ticket.fields.summary))
                 else:
                     self.__send_message("You have no tickets 'In Progress'.\n"
                                         "Reply with 'resolve' to dismiss this message.")
