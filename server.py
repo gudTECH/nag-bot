@@ -111,6 +111,7 @@ class Session(object):
     def __lookup_action(self, message):
         # type: (str) -> None
         """Parse a message and dispatch to the proper method"""
+        # Should do this better
 
         if self.__context:
             if self.__context.conflict_type == "on_over":
@@ -156,12 +157,16 @@ class Session(object):
             self.__show_help()
 
         # inactivate check
-        if message == "inactivate":
+        elif message == "inactivate":
             self.__inactivate_user()
 
         # get hours check
-        if re.search("^(?:get|show) (?:hours|options|settings)$", message):
+        elif re.search("^(?:get|show) (?:hours|options|settings)$", message):
             self.__show_opts()
+
+        # get team check
+        elif re.search("^(?:get|show) (?:people|team)$", message):
+            self.__show_people()
 
         # set hours check
         match = re.search("^set hours (\d{1,2})(?::(\d{1,2}))? ?(am|pm)? ?- ?(\d+)(?::(\d{1,2}))? ?(am|pm)?$", message)
@@ -256,6 +261,7 @@ class Session(object):
                                 "get hours -- show work and lunch hours\n"
                                 "pause -- set current case(s) to 'On Hold'\n"
                                 "resume -- set last case to 'In Progress'\n"
+                                "get team -- show the people in your team\n"
                                 "Wondering about another part of this bot?  'help' changes depending on the context")
 
     def __set_lunch_hours(self, start, end):
@@ -288,6 +294,15 @@ class Session(object):
             self.__send_message("{0} has been set to 'In Progress'.")
         else:
             self.__send_message("You have no previous ticket.")
+
+    def __show_people(self):
+        # type: () -> None
+        buffer_list = ["Users in your team:"]
+        for u in User.select():
+            buffer_list.append("{0} -- {1} -- {2} - {3}".format(u.username, "active" if u.active else "inactive",
+                                                                u.on_time.strftime("%I:%M %p"),
+                                                                u.off_time.strftime("%I:%M %p")))
+        self.__send_message("\n".join(buffer_list))
 
 
 def check_active_tickets():
