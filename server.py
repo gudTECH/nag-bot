@@ -388,10 +388,8 @@ def main():
 
     while True:
         event = slack_sock.get_event().event
-        print event
         if not ("hidden" in event and event["hidden"]) and event["user"] == event["channel"] and \
                 event["user"] != "slackbot":
-            print "{0} - {1}".format(event["user"], event["text"])
             if event["user"] in active_sessions and active_sessions[event["user"]].active:
                 active_sessions[event["user"]].queue_message(event["text"])
             else:
