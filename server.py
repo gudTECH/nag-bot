@@ -267,18 +267,36 @@ class Session(object):
         self.__send_message("Lunch hours set")
 
     def __pause_ticket(self) -> None:
-        in_progress = jira_conn.search_issues("project=ROP and assignee=matt and status=\"In Progress\"")
+        in_progress = jira_conn.search_issues("project={0} and assignee={1} and status=\"In Progress\""
+                                              .format(config.jira_project, self.__user.username))
         for ticket in in_progress:
             transition = jira_conn.find_transitionid_by_name(ticket, "Halt Work")
             jira_conn.transition_issue(ticket, transition)
-        if in_progress.total > 1:
-            self.__send_message("All tickets have been set to 'On Hold'.")
-        elif in_progress.total == 1:
-            self.__send_message("{0} has been set to 'On Hold'.".format(in_progress[0].key))
+        if in_progress.total > 0:
+            if self.__user.prev_tickets.count():
+                prev_ticket = self.__user.prev_tickets  # type: PrevTicket
+                prev_ticket.ticket_key = in_progress[0].key
+                prev_ticket.save()
+            else:
+                PrevTicket.create(user=self.__user, ticket_key=in_progress[0].key)
+            if in_progress.total == 1:
+                self.__send_message("{0} has been set to 'On Hold'.".format(in_progress[0].key))
+            else:
+                self.__send_message("All tickets have been set to 'On Hold'.")
         else:
             self.__send_message("You have no in progress tickets.")
 
+        self.__resolve_all()
+
     def __resume_ticket(self) -> None:
+        in_progress = jira_conn.search_issues("project={0} and assignee={1} and status=\"In Progress\""
+                                              .format(config.jira_project, self.__user.username))
+        for ticket in in_progress:
+            transition = jira_conn.find_transitionid_by_name(ticket, "Halt Work")
+            jira_conn.transition_issue(ticket, transition)
+
+        self.__resolve_all()
+
         if self.__user.prev_tickets.count():
             ticket = jira_conn.issue(self.__user.prev_tickets[0].ticket_key)
             transition = jira_conn.find_transitionid_by_name(ticket, "Resume Work")
@@ -300,6 +318,11 @@ class Session(object):
         self.__context.save()
         self.active = False
 
+    def __resolve_all(self) -> None:
+        for e in self.__user.events.where(Event.active == True):
+            e.active = False
+            e.save()
+
 
 def check_active_tickets() -> None:
     global check_timer
@@ -310,8 +333,8 @@ def check_active_tickets() -> None:
         return
     for u in User.select().where(User.active == True):
         # TODO: Fix for multiple projects
-        in_progress = jira_conn.search_issues("project={0} and assignee=matt and status=\"In Progress\""
-                                              .format(config.jira_project))
+        in_progress = jira_conn.search_issues("project={0} and assignee={1} and status=\"In Progress\""
+                                              .format(config.jira_project, u.username))
 
         start_time = datetime.combine(datetime.now(timezone(config.time_zone)).date(), u.on_time)\
             .replace(tzinfo=timezone(config.time_zone))
