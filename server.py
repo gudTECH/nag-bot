@@ -1,27 +1,26 @@
 from jira import JIRA
 from slacksocket import SlackSocket
 from threading import Thread, Timer
-import Queue
+import queue
 from db import *
 import re
-from datetime import time, datetime, timedelta, date
+from datetime import time, datetime, timedelta
 import sys
 from pytz import timezone
+import config
+from typing import Mapping
 
-config = {}
-execfile("config.py", config)
-slack_sock = SlackSocket(config["slack_token"], True, ["message"])
-active_sessions = {}  # type: dict[str, Session]
-jira_conn = JIRA(server=config["jira_server"], basic_auth=(config["jira_user"], config["jira_pass"]))
+slack_sock = SlackSocket(config.slack_token, True, ["message"])
+active_sessions = {}  # type: Mapping[str, Session]
+jira_conn = JIRA(server=config.jira_server, basic_auth=(config.jira_user, config.jira_pass))
 check_timer = None  # type: Timer
 
 
 # TODO: Should possibly refactor
 # TODO: Replace maps with list comprehension
 class Session(object):
-    def __init__(self, username, context=None):
-        # type: (str, Event) -> None
-        self.__queue = Queue.Queue()
+    def __init__(self, username: str, context: Event = None) -> None:
+        self.__queue = queue.Queue()
         channel = slack_sock.get_im_channel(username)
         self.__channel_id = channel["id"]
         try:
@@ -31,7 +30,7 @@ class Session(object):
         self.__user = rec
         self.active = False
         self.__context = context
-        self.__prev_ticket = None
+        self.__prev_ticket = None  # type: PrevTicket
 
         # this should happen elsewhere
         if context:
@@ -61,24 +60,21 @@ class Session(object):
                                     "If you would like to move them to 'On Hold', reply with 'yes'.\n"
                                     "Reply with 'no' to dismiss this message")
 
-    def queue_message(self, message):
-        # type: (str) -> None
+    def queue_message(self, message: str) -> None:
         """Queue a message for processing"""
         self.__queue.put(message)
 
-    def start_worker(self):
-        # type: () -> None
+    def start_worker(self) -> None:
         """Start worker thread"""
         self.active = True
         t = Thread(target=self.__process_message)
         t.daemon = True
         t.start()
 
-    def __process_message(self):
-        # type: () -> None
+    def __process_message(self) -> None:
         """Block for message then dispatch it to the proper method"""
         try:
-            message = self.__queue.get(True, 600)
+            message = self.__queue.get(True, 1800)
             if message == "activate":
                 self.__activate_user()
 
@@ -92,22 +88,20 @@ class Session(object):
             if self.__context and self.__context.active:
                 self.__process_message()
 
-        except Queue.Empty:
+        except queue.Empty:
             if self.__context and self.__context.active:
                 slack_sock.send_msg("Time's up, you'll need to resolve this event via JIRA.",
                                     channel_id=self.__channel_id)
         finally:
             self.active = False
 
-    def __activate_user(self):
-        # type: () -> None
+    def __activate_user(self) -> None:
         """Activate the user associated with this session"""
         self.__user.active = True
         self.__user.save()
         self.__send_message("User activated")
 
-    def __lookup_action(self, message):
-        # type: (str) -> None
+    def __lookup_action(self, message: str) -> None:
         """Parse a message and dispatch to the proper method"""
         # Should do this better
 
@@ -158,6 +152,14 @@ class Session(object):
         elif message == "inactivate":
             self.__inactivate_user()
 
+        # pause check
+        elif message == "pause":
+            self.__pause_ticket()
+
+        # resume check
+        elif message == "resume":
+            self.__resume_ticket()
+
         # get hours check
         elif re.search("^(?:get|show) (?:hours|options|settings)$", message):
             self.__show_opts()
@@ -185,28 +187,24 @@ class Session(object):
                                         else int(match.group(4)),
                                         minute=int(match.group(5)) if match.group(5) else 0))
 
-    def __set_hours(self, start, end):
-        # type: (time, time) -> None
+    def __set_hours(self, start: time, end: time) -> None:
         """Set working hours"""
         self.__user.on_time = start
         self.__user.off_time = end
         self.__user.save()
         self.__send_message("Hours set")
 
-    def __inactivate_user(self):
-        # type: () -> None
+    def __inactivate_user(self) -> None:
         """Inactivate the user assoc"""
         self.__user.active = False
         self.__user.save()
         self.__send_message("User deactivated")
 
-    def __send_message(self, message):
-        # type: (str) -> None
+    def __send_message(self, message: str) -> None:
         """Send a pm to the user associated with this session"""
         slack_sock.send_msg(message, channel_id=self.__channel_id, confirm=False)
 
-    def __show_opts(self):
-        # type: () -> None
+    def __show_opts(self) -> None:
         """Show the user's selected options"""
         self.__send_message("Active\n"
                             "Work hours -- {0} - {1}\n"
@@ -215,8 +213,7 @@ class Session(object):
                                                               self.__user.lunch_on.strftime("%I:%M %p"),
                                                               self.__user.lunch_off.strftime("%I:%M %p")))
 
-    def __show_help(self):
-        # type: () -> None
+    def __show_help(self) -> None:
         """Show help blurb"""
         if self.__context:
             if self.__context.conflict_type == "on_over":
@@ -262,16 +259,14 @@ class Session(object):
                                 "get team -- show the people in your team\n"
                                 "Wondering about another part of this bot?  'help' changes depending on the context")
 
-    def __set_lunch_hours(self, start, end):
-        # type: (time, time) -> None
+    def __set_lunch_hours(self, start: time, end: time) -> None:
         """Set user's lunch hours"""
         self.__user.lunch_on = start
         self.__user.lunch_off = end
         self.__user.save()
         self.__send_message("Lunch hours set")
 
-    def __pause_ticket(self):
-        # type: () -> None
+    def __pause_ticket(self) -> None:
         in_progress = jira_conn.search_issues("project=ROP and assignee=matt and status=\"In Progress\"")
         for ticket in in_progress:
             transition = jira_conn.find_transitionid_by_name(ticket, "Halt Work")
@@ -283,18 +278,16 @@ class Session(object):
         else:
             self.__send_message("You have no in progress tickets.")
 
-    def __resume_ticket(self):
-        # type: () -> None
+    def __resume_ticket(self) -> None:
         if self.__user.prev_tickets.count():
             ticket = jira_conn.issue(self.__user.prev_tickets[0].ticket_key)
             transition = jira_conn.find_transitionid_by_name(ticket, "Resume Work")
             jira_conn.transition_issue(ticket, transition)
-            self.__send_message("{0} has been set to 'In Progress'.")
+            self.__send_message("{0} has been set to 'In Progress'.".format(ticket.key))
         else:
             self.__send_message("You have no previous ticket.")
 
-    def __show_people(self):
-        # type: () -> None
+    def __show_people(self) -> None:
         buffer_list = ["Users in your team:"]
         for u in User.select():
             buffer_list.append("{0} -- {1} -- {2} - {3}".format(u.username, "active" if u.active else "inactive",
@@ -302,34 +295,42 @@ class Session(object):
                                                                 u.off_time.strftime("%I:%M %p")))
         self.__send_message("\n".join(buffer_list))
 
+    def resolve_event(self) -> None:
+        self.__context.active = False
+        self.__context.save()
+        self.active = False
 
-def check_active_tickets():
+
+def check_active_tickets() -> None:
     global check_timer
-    check_timer = Timer(1800, check_active_tickets, ())
+    check_timer = Timer(300, check_active_tickets, ())
     check_timer.start()
-    if datetime.now(timezone(config["time_zone"])).weekday() == 5 or \
-            datetime.now(timezone(config["time_zone"])).weekday() == 6:
+    if datetime.now(timezone(config.time_zone)).weekday() == 5 or \
+            datetime.now(timezone(config.time_zone)).weekday() == 6:
         return
     for u in User.select().where(User.active == True):
         # TODO: Fix for multiple projects
         in_progress = jira_conn.search_issues("project={0} and assignee=matt and status=\"In Progress\""
-                                              .format(config["jira_project"]))
+                                              .format(config.jira_project))
 
-        start_time = datetime.combine(datetime.now(timezone(config["time_zone"])).date(), u.on_time)\
-            .replace(tzinfo=timezone(config["time_zone"]))
-        off_time = datetime.combine(datetime.now(timezone(config["time_zone"])).date(), u.off_time)\
-            .replace(tzinfo=timezone(config["time_zone"]))
-        lunch_start_time = datetime.combine(datetime.now(timezone(config["time_zone"])).date(), u.lunch_on)\
-            .replace(tzinfo=timezone(config["time_zone"]))
-        lunch_stop_time = datetime.combine(datetime.now(timezone(config["time_zone"])).date(), u.lunch_off)\
-            .replace(tzinfo=timezone(config["time_zone"]))
+        start_time = datetime.combine(datetime.now(timezone(config.time_zone)).date(), u.on_time)\
+            .replace(tzinfo=timezone(config.time_zone))
+        off_time = datetime.combine(datetime.now(timezone(config.time_zone)).date(), u.off_time)\
+            .replace(tzinfo=timezone(config.time_zone))
+        lunch_start_time = datetime.combine(datetime.now(timezone(config.time_zone)).date(), u.lunch_on)\
+            .replace(tzinfo=timezone(config.time_zone))
+        lunch_stop_time = datetime.combine(datetime.now(timezone(config.time_zone)).date(), u.lunch_off)\
+            .replace(tzinfo=timezone(config.time_zone))
 
         # check if it's lunchtime
-        if lunch_start_time <= datetime.now(timezone(config["time_zone"])) <= lunch_stop_time:
+        if lunch_start_time <= datetime.now(timezone(config.time_zone)) <= lunch_stop_time:
             if in_progress.total > 1:
                 ticket_keys = map(lambda t: t.key, in_progress)
                 if not any(set(e.ticket_list) == set(ticket_keys) for e in
                            u.events.where((Event.active == True) & (Event.conflict_type == "on_over"))):
+                    for e in u.events.where(Event.active == True):
+                        e.active = False
+                        e.save()
                     context = Event.create(conflict_type="on_over", user=u)
                     context.tickets_affected = ticket_keys
                     context.save()
@@ -338,12 +339,15 @@ def check_active_tickets():
                     s.start_worker()
         else:
             # check if in work hours with one hour of grace
-            if (start_time + timedelta(hours=1)) <= datetime.now(timezone(config["time_zone"])) <= \
+            if (start_time + timedelta(hours=1)) <= datetime.now(timezone(config.time_zone)) <= \
                     (off_time - timedelta(hours=1)):
                 if in_progress.total > 1:
                     ticket_keys = map(lambda t: t.key, in_progress)
                     if not any(set(e.tickets_affected) == set(ticket_keys) for e in
                                u.events.where((Event.active == True) & (Event.conflict_type == "on_over"))):
+                        for e in u.events.where(Event.active == True):
+                            e.active = False
+                            e.save()
                         context = Event.create(conflict_type="on_over", user=u)
                         context.tickets_affected = ticket_keys
                         context.save()
@@ -353,6 +357,9 @@ def check_active_tickets():
 
                 elif in_progress.total == 0:
                     if not u.events.where((Event.active == True) & (Event.conflict_type == "on_under")):
+                        for e in u.events.where(Event.active == True):
+                            e.active = False
+                            e.save()
                         context = Event.create(conflict_type="on_under", user=u)
                         s = Session(u.username, context)
                         active_sessions[u.username] = s
@@ -372,9 +379,12 @@ def check_active_tickets():
                         e.save()
 
             # check if not in work hours with one hour of grace
-            elif not ((start_time - timedelta(hours=1)) <= datetime.now(timezone(config["time_zone"])) <=
+            elif not ((start_time - timedelta(hours=1)) <= datetime.now(timezone(config.time_zone)) <=
                       (off_time + timedelta(hours=1))):
                 if in_progress.total > 0:
+                    for e in u.events.where(Event.active == True):
+                        e.active = False
+                        e.save()
                     context = Event(conflict_type="off_over", user=u)
                     context.tickets_affected = map(lambda t: t.key, in_progress)
                     context.save()
@@ -388,15 +398,11 @@ def check_active_tickets():
                         e.save()
 
 
-def main():
-    next_half_hour = datetime.now()
-    if next_half_hour.minute <= 30:
-        next_half_hour = next_half_hour.replace(minute=30)
-    else:
-        next_half_hour += timedelta(hours=1)
-        next_half_hour = next_half_hour.replace(minute=0)
+def main() -> None:
+    next_five = datetime.now()
+    next_five = next_five.replace(minute=(next_five.minute + (5 - (next_five.minute % 5))))
     global check_timer
-    check_timer = Timer((next_half_hour - datetime.now()).total_seconds(), check_active_tickets, ())
+    check_timer = Timer((next_five - datetime.now()).total_seconds(), check_active_tickets, ())
     check_timer.start()
 
     while True:
@@ -415,7 +421,7 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print "Got Ctrl-C shutting down"
+        print("Got Ctrl-C shutting down")
         if check_timer:
             check_timer.cancel()
         sys.exit()

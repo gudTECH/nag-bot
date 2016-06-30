@@ -2,6 +2,7 @@ from peewee import *
 from playhouse.sqlite_ext import SqliteExtDatabase
 from datetime import time
 import json
+from typing import List
 
 db = SqliteExtDatabase("gudbot.db")
 
@@ -27,13 +28,11 @@ class Event(BaseModel):
     conflict_type = CharField()
 
     @property
-    def tickets_affected(self):
-        # type: () -> list[str]
+    def tickets_affected(self) -> List[str]:
         return json.loads(self.__tickets_affected) if self.__tickets_affected else []
 
     @tickets_affected.setter
-    def tickets_affected(self, val):
-        # type: (list[str]) -> None
+    def tickets_affected(self, val: List[str]):
         self.__tickets_affected = json.dumps(val)
 
 

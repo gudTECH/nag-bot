@@ -1,9 +1,10 @@
 # nag-bot
-A bot to help people stay on task, and keep issues in the right status.
+A slack/jira bot to help people stay on task, and keep issues in the right status.
 
 Ask the bot 'help' after activating your user for an explanation of commands.
 
 ## Dependencies
+* Python >= 3.4
 * peewee
 * pytz
 * jira
