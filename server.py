@@ -8,16 +8,15 @@ from datetime import time, datetime, timedelta
 import sys
 from pytz import timezone
 import config
-from typing import Mapping
+from typing import Dict
 
 slack_sock = SlackSocket(config.slack_token, True, ["message"])
-active_sessions = {}  # type: Mapping[str, Session]
+active_sessions = {}  # type: Dict[str, Session]
 jira_conn = JIRA(server=config.jira_server, basic_auth=(config.jira_user, config.jira_pass))
 check_timer = None  # type: Timer
 
 
 # TODO: Should possibly refactor
-# TODO: Replace maps with list comprehension
 class Session(object):
     def __init__(self, username: str, context: Event = None) -> None:
         self.__queue = queue.Queue()
@@ -348,7 +347,7 @@ def check_active_tickets() -> None:
         # check if it's lunchtime
         if lunch_start_time <= datetime.now(timezone(config.time_zone)) <= lunch_stop_time:
             if in_progress.total > 1:
-                ticket_keys = map(lambda t: t.key, in_progress)
+                ticket_keys = [t.key for t in in_progress]
                 if not any(set(e.ticket_list) == set(ticket_keys) for e in
                            u.events.where((Event.active == True) & (Event.conflict_type == "on_over"))):
                     for e in u.events.where(Event.active == True):
@@ -365,7 +364,7 @@ def check_active_tickets() -> None:
             if (start_time + timedelta(hours=1)) <= datetime.now(timezone(config.time_zone)) <= \
                     (off_time - timedelta(hours=1)):
                 if in_progress.total > 1:
-                    ticket_keys = map(lambda t: t.key, in_progress)
+                    ticket_keys = [t.key for t in in_progress]
                     if not any(set(e.tickets_affected) == set(ticket_keys) for e in
                                u.events.where((Event.active == True) & (Event.conflict_type == "on_over"))):
                         for e in u.events.where(Event.active == True):
@@ -409,7 +408,7 @@ def check_active_tickets() -> None:
                         e.active = False
                         e.save()
                     context = Event(conflict_type="off_over", user=u)
-                    context.tickets_affected = map(lambda t: t.key, in_progress)
+                    context.tickets_affected = [t.key for t in in_progress]
                     context.save()
                     s = Session(u.username, context)
                     active_sessions[u.username] = s

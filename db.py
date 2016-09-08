@@ -33,7 +33,7 @@ class Event(BaseModel):
 
     @tickets_affected.setter
     def tickets_affected(self, val: List[str]):
-        self.__tickets_affected = json.dumps(val)
+        self.__tickets_affected = json.dumps(val) if val else None
 
 
 class PrevTicket(BaseModel):
