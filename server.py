@@ -17,6 +17,7 @@ check_timer = None  # type: Timer
 
 
 # TODO: Should possibly refactor
+# TODO: Everything here should use slack buttons
 class Session(object):
     def __init__(self, username: str, context: Event = None) -> None:
         self.__queue = queue.Queue()
@@ -102,8 +103,8 @@ class Session(object):
 
     def __lookup_action(self, message: str) -> None:
         """Parse a message and dispatch to the proper method"""
-        # Should do this better
 
+        # TODO: Should do this better
         if self.__context:
             if self.__context.conflict_type == "on_over":
                 if re.search("^\d+$", message):
@@ -205,12 +206,13 @@ class Session(object):
 
     def __show_opts(self) -> None:
         """Show the user's selected options"""
-        self.__send_message("Active\n"
+        self.__send_message("{4}\n"
                             "Work hours -- {0} - {1}\n"
                             "Lunch hours -- {2} - {3}".format(self.__user.on_time.strftime("%I:%M %p"),
                                                               self.__user.off_time.strftime("%I:%M %p"),
                                                               self.__user.lunch_on.strftime("%I:%M %p"),
-                                                              self.__user.lunch_off.strftime("%I:%M %p")))
+                                                              self.__user.lunch_off.strftime("%I:%M %p"),
+                                                              "Active" if self.__user.active else "Inactive"))
 
     def __show_help(self) -> None:
         """Show help blurb"""
@@ -307,9 +309,8 @@ class Session(object):
     def __show_people(self) -> None:
         buffer_list = ["Users in your team:"]
         for u in User.select():
-            buffer_list.append("{0} -- {1} -- {2} - {3}".format(u.username, "active" if u.active else "inactive",
-                                                                u.on_time.strftime("%I:%M %p"),
-                                                                u.off_time.strftime("%I:%M %p")))
+            buffer_list.append("{0} -- {1} - {2}".format(u.username, u.on_time.strftime("%I:%M %p"),
+                                                         u.off_time.strftime("%I:%M %p")))
         self.__send_message("\n".join(buffer_list))
 
     def resolve_event(self) -> None:
