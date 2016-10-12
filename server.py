@@ -222,7 +222,7 @@ class Session(object):
                                     "- Overworked edition -\n"
                                     "1-N -- Choose that ticket as the one you are currently working on, all others will"
                                     " be set to hold.\n"
-                                    "DO NOTHING -- This message will not display again while unresolved.  After 10 "
+                                    "DO NOTHING -- This message will not display again while unresolved.  After 30 "
                                     "minutes, you will not be able to resolve this event via this chat.  It will "
                                     "automagically resolve itself once you resolve it manually via JIRA.")
 
@@ -230,10 +230,10 @@ class Session(object):
                 self.__send_message("-- gudbot help --\n"
                                     "- Forgetful edition -\n"
                                     "yes -- (may not be available) Move {0} back to 'In Progress'.\n"
-                                    "no -- Resolve event, this will trigger again in 30 minutes if you don't have a "
+                                    "no -- Resolve event, this will trigger again in 5 minutes if you don't have a "
                                     "ticket 'In Progress' then.\n"
                                     "resolve -- Alias for no\n"
-                                    "DO NOTHING -- This message will not display again while unresolved.  After 10 "
+                                    "DO NOTHING -- This message will not display again while unresolved.  After 30 "
                                     "minutes, you will not be able to resolve this event via this chat.  It will "
                                     "automagically resolve itself once you resolve it manually via JIRA."
                                     .format(self.__prev_ticket if self.__prev_ticket else "your previous ticket"))
@@ -242,9 +242,9 @@ class Session(object):
                 self.__send_message("-- gudbot help --\n"
                                     "- There's no escape edition -\n"
                                     "yes -- Move {0} to 'On Hold'\n"
-                                    "no -- Resolve event, this will trigger again in 30 minutes if you still have any "
+                                    "no -- Resolve event, this will trigger again in 5 minutes if you still have any "
                                     "tickets 'In Progress' then.\n"
-                                    "DO NOTHING -- This message will not display again while unresolved.  After 10 "
+                                    "DO NOTHING -- This message will not display again while unresolved.  After 30 "
                                     "minutes, you will not be able to resolve this event via this chat.  It will "
                                     "automagically resolve itself once you resolve it manually via JIRA."
                                     .format(", ".join(self.__context.tickets_affected)))
